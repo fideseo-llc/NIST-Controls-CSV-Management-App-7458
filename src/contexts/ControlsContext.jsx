@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import Fuse from 'fuse.js';
+import { fetchControls, createControl, updateControl as updateControlApi, deleteControl as deleteControlApi } from '../lib/api';
 
 const ControlsContext = createContext();
 
@@ -15,6 +16,8 @@ export const ControlsProvider = ({ children }) => {
   const [controls, setControls] = useState([]);
   const [filteredControls, setFilteredControls] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [fuse, setFuse] = useState(null);
 
   // Initialize Fuse.js for fuzzy search
@@ -35,15 +38,23 @@ export const ControlsProvider = ({ children }) => {
     }
   }, [controls]);
 
-  // Load controls from localStorage on mount
+  // Load controls from API
   useEffect(() => {
-    const savedControls = localStorage.getItem('nistControls');
-    if (savedControls) {
-      const parsedControls = JSON.parse(savedControls);
-      setControls(parsedControls);
-      setFilteredControls(parsedControls);
-    }
+    loadControls();
   }, []);
+
+  const loadControls = async () => {
+    try {
+      setLoading(true);
+      const data = await fetchControls();
+      setControls(data);
+      setFilteredControls(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Handle search
   useEffect(() => {
@@ -55,21 +66,31 @@ export const ControlsProvider = ({ children }) => {
     }
   }, [searchTerm, controls, fuse]);
 
-  const updateControls = (newControls) => {
-    setControls(newControls);
-    localStorage.setItem('nistControls', JSON.stringify(newControls));
+  const updateControls = async (newControls) => {
+    try {
+      await Promise.all(newControls.map(control => createControl(control)));
+      await loadControls();
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
-  const updateControl = (controlId, updatedControl) => {
-    const updatedControls = controls.map(control =>
-      control.controlId === controlId ? { ...control, ...updatedControl } : control
-    );
-    updateControls(updatedControls);
+  const updateControl = async (controlId, updatedControl) => {
+    try {
+      await updateControlApi(controlId, updatedControl);
+      await loadControls();
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
-  const deleteControl = (controlId) => {
-    const updatedControls = controls.filter(control => control.controlId !== controlId);
-    updateControls(updatedControls);
+  const deleteControl = async (controlId) => {
+    try {
+      await deleteControlApi(controlId);
+      await loadControls();
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   const value = {
@@ -79,7 +100,9 @@ export const ControlsProvider = ({ children }) => {
     setSearchTerm,
     updateControls,
     updateControl,
-    deleteControl
+    deleteControl,
+    loading,
+    error
   };
 
   return (
